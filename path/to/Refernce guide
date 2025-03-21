@@ -1,0 +1,6 @@
+  id: "product-3",
+  name: "New Product",
+  price: 35.99,
+  handle: "new-product",
+  imageUrl: "/assets/mockup33.png", // You'll need new mockup images
+  // other properties

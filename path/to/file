@@ -1,0 +1,293 @@
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x000000); // Set background to black
+document.body.appendChild(renderer.domElement);
+
+// Enhance lighting for dramatic effect
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.3); // Reduced ambient light
+scene.add(ambientLight);
+const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+directionalLight.position.set(2, 2, 5);
+scene.add(directionalLight);
+
+// Add spot light for dramatic highlighting
+const spotLight = new THREE.SpotLight(0xffffff, 1);
+spotLight.position.set(-5, 5, 0);
+spotLight.angle = Math.PI / 6;
+spotLight.penumbra = 0.1;
+scene.add(spotLight);
+
+// Add orbit controls for better interaction
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.25;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 2;
+
+// Set camera position
+camera.position.z = 5;
+
+// Add loading manager to track progress and handle errors
+const loadingManager = new THREE.LoadingManager();
+loadingManager.onProgress = (url, loaded, total) => {
+    console.log(`Loading file: ${url} (${Math.round(loaded / total * 100)}%)`);
+};
+loadingManager.onError = (url) => {
+    console.error(`Error loading: ${url}`);
+    alert(`Failed to load resource: ${url}. Please check the file path and server configuration.`);
+};
+
+// Create texture loader with the same loading manager
+const textureLoader = new THREE.TextureLoader(loadingManager);
+
+// Try different path formats for textures
+const texturePaths = {
+    front: [
+        'diddychoppa/downloads/11.png',
+        '/diddychoppa/downloads/11.png',
+        './diddychoppa/downloads/11.png',
+        '../diddychoppa/downloads/11.png'
+    ],
+    back: [
+        'diddychoppa/downloads/22.png',
+        '/diddychoppa/downloads/22.png',
+        './diddychoppa/downloads/22.png',
+        '../diddychoppa/downloads/22.png'
+    ]
+};
+
+// Load textures with error handling
+let frontTexture, backTexture;
+
+function loadTextures(callback, frontIndex = 0, backIndex = 0) {
+    // Try to load front texture
+    if (frontIndex < texturePaths.front.length) {
+        const frontPath = texturePaths.front[frontIndex];
+        console.log(`Attempting to load front texture from: ${frontPath}`);
+        
+        textureLoader.load(
+            frontPath,
+            (texture) => {
+                console.log("Front texture loaded successfully!");
+                frontTexture = texture;
+                
+                // Now try to load back texture
+                if (backIndex < texturePaths.back.length) {
+                    const backPath = texturePaths.back[backIndex];
+                    console.log(`Attempting to load back texture from: ${backPath}`);
+                    
+                    textureLoader.load(
+                        backPath,
+                        (texture) => {
+                            console.log("Back texture loaded successfully!");
+                            backTexture = texture;
+                            callback(); // Both textures loaded, proceed
+                        },
+                        undefined,
+                        (error) => {
+                            console.error(`Error loading back texture from ${backPath}:`, error);
+                            loadTextures(callback, frontIndex, backIndex + 1);
+                        }
+                    );
+                } else {
+                    console.error("Failed to load back texture with all attempted paths");
+                    alert("Could not load the back texture. Using a placeholder instead.");
+                    backTexture = new THREE.Texture(); // Empty texture as placeholder
+                    callback(); // Continue anyway
+                }
+            },
+            undefined,
+            (error) => {
+                console.error(`Error loading front texture from ${frontPath}:`, error);
+                loadTextures(callback, frontIndex + 1, backIndex);
+            }
+        );
+    } else {
+        console.error("Failed to load front texture with all attempted paths");
+        alert("Could not load the front texture. Using a placeholder instead.");
+        frontTexture = new THREE.Texture(); // Empty texture as placeholder
+        
+        // Try to load back texture anyway
+        if (backIndex < texturePaths.back.length) {
+            loadTextures(callback, frontIndex, backIndex);
+        } else {
+            backTexture = new THREE.Texture(); // Empty texture as placeholder
+            callback(); // Continue anyway
+        }
+    }
+}
+
+// Try to load the model with different paths
+const modelPaths = [
+    'diddychoppa/downloads/oversizedtshirt.glb',
+    '/diddychoppa/downloads/oversizedtshirt.glb',
+    './diddychoppa/downloads/oversizedtshirt.glb',
+    '../diddychoppa/downloads/oversizedtshirt.glb'
+];
+
+let shirt; // Store reference to the model
+const originalMaterials = new Map();
+
+// First load textures, then try to load the model
+loadTextures(() => {
+    tryLoadModel();
+});
+
+function tryLoadModel(pathIndex = 0) {
+    if (pathIndex >= modelPaths.length) {
+        console.error("Failed to load model with all attempted paths");
+        alert("Could not load the 3D model. Please check the console for details.");
+        return;
+    }
+    
+    const path = modelPaths[pathIndex];
+    console.log(`Attempting to load model from: ${path}`);
+    
+    const loader = new GLTFLoader(loadingManager);
+    loader.load(
+        path,
+        (gltf) => {
+            console.log("Model loaded successfully!");
+            shirt = gltf.scene;
+            
+            // Apply textures to the shirt
+            shirt.traverse((child) => {
+                if (child.isMesh) {
+                    // Create separate materials for front and back
+                    const frontMaterial = new THREE.MeshStandardMaterial({
+                        map: frontTexture,
+                        side: THREE.FrontSide,
+                        color: 0x000000, // Base color black
+                        roughness: 0.5,
+                        metalness: 0.1
+                    });
+                    
+                    const backMaterial = new THREE.MeshStandardMaterial({
+                        map: backTexture,
+                        side: THREE.BackSide,
+                        color: 0x000000, // Base color black
+                        roughness: 0.5,
+                        metalness: 0.1
+                    });
+                    
+                    // Combine materials into an array
+                    child.material = [frontMaterial, backMaterial];
+                    
+                    // Store the original materials for hover effect
+                    originalMaterials.set(child, [frontMaterial.clone(), backMaterial.clone()]);
+                }
+            });
+            
+            // Center the model
+            const box = new THREE.Box3().setFromObject(shirt);
+            const center = box.getCenter(new THREE.Vector3());
+            shirt.position.x = -center.x;
+            shirt.position.y = -center.y;
+            shirt.position.z = -center.z;
+            
+            // Scale the model if needed
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            if (maxDim > 3) {
+                const scale = 3 / maxDim;
+                shirt.scale.set(scale, scale, scale);
+            }
+            
+            scene.add(shirt);
+            
+            // Setup raycaster for cursor interaction
+            setupInteraction();
+        },
+        (xhr) => {
+            console.log(`${path}: ${(xhr.loaded / xhr.total * 100)}% loaded`);
+        },
+        (error) => {
+            console.error(`Error loading model from ${path}:`, error);
+            // Try the next path
+            tryLoadModel(pathIndex + 1);
+        }
+    );
+}
+
+// Setup cursor interaction
+function setupInteraction() {
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let hoveredObject = null;
+
+    function onMouseMove(event) {
+        // Calculate mouse position in normalized device coordinates
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+        // Update the raycaster
+        raycaster.setFromCamera(mouse, camera);
+        
+        // Find intersections
+        const intersects = raycaster.intersectObject(shirt, true);
+        
+        // Reset previously hovered object
+        if (hoveredObject) {
+            hoveredObject.material = originalMaterials.get(hoveredObject).map(mat => mat.clone());
+            hoveredObject = null;
+            document.body.style.cursor = 'auto';
+        }
+        
+        // Handle new hover
+        if (intersects.length > 0) {
+            hoveredObject = intersects[0].object;
+            if (originalMaterials.has(hoveredObject)) {
+                const hoverMaterials = originalMaterials.get(hoveredObject).map(mat => {
+                    const hoverMat = mat.clone();
+                    hoverMat.emissive = new THREE.Color(0x333333);
+                    return hoverMat;
+                });
+                hoveredObject.material = hoverMaterials;
+                document.body.style.cursor = 'pointer';
+            }
+        }
+    }
+
+    // Toggle rotation on click
+    renderer.domElement.addEventListener('click', () => {
+        controls.autoRotate = !controls.autoRotate;
+    });
+
+    window.addEventListener('mousemove', onMouseMove, false);
+}
+
+// Handle window resize
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
+window.addEventListener('resize', onWindowResize, false);
+
+// Add instructions overlay
+const instructions = document.createElement('div');
+instructions.style.position = 'absolute';
+instructions.style.bottom = '20px';
+instructions.style.left = '50%';
+instructions.style.transform = 'translateX(-50%)';
+instructions.style.color = 'white';
+instructions.style.fontFamily = 'Arial, sans-serif';
+instructions.style.padding = '10px';
+instructions.style.backgroundColor = 'rgba(0,0,0,0.5)';
+instructions.style.borderRadius = '5px';
+instructions.innerHTML = 'Click to toggle rotation | Drag to rotate | Scroll to zoom';
+document.body.appendChild(instructions);
+
+// Render loop
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update(); // Update controls
+    renderer.render(scene, camera);
+}
+animate(); 
